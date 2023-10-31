@@ -2,7 +2,7 @@
 
 ***Form Yuhao***
 
-## DGIOT平台
+## DGIOT
 ### 1.平台实地部署 
 DGIOT平台选用腾讯云服务器，操作系统选取CentOS7.6 64位系统，实例配置为标准型S5 - 2核 2G。公网IP：43.137.18.23
 
@@ -157,7 +157,7 @@ terminate(_Reason, _Req, _UnExpectedState) ->
 %%%peername:对等端的地址和端口号; sockname：套接字的地址和端口号
 ~~~
 
-### 2。APIS：（src/emqx_access_control.erl）
+#### 2.APIS：（src/emqx_access_control.erl）
 ~~~erl
 -spec(authenticate(emqx_types:clientinfo()) -> {ok, result()} | {error, term()}).
 authenticate(ClientInfo = #{zone := Zone}) ->
@@ -242,6 +242,66 @@ return_auth_result(AuthResult) ->
 该函数具有两个匹配模式。当传入的 AuthResult 是一个包含 auth_result 键并且其关键字为 success 的 map 时，函数会调用 inc_auth_success_metrics/1 函数增加认证成功度量指标，并返回 {ok, AuthResult}。<br />
 如果传入的 AuthResult 不满足第一个模式，则会调用 emqx_metrics:inc/1 函数增加 'client.auth.failure' 的度量指标，并返回一个元组 {error, maps:get(auth_result, AuthResult, unknown_error)}。其中包含失败信息以及失败原因，maps:get/3 函数用于获取 AuthResult 中的 auth_result 键的值，如果键不存在则返回 unknown_error 作为默认值。<br />
 通过对不同的 AuthResult 进行匹配和处理，函数能够根据认证结果返回适当的响应和相应的度量指标。
+#### 3.Channel(通讯通道)（emqx_channel_erl）
+通讯通道的实例和初始化：
+~~~erl
+-spec(init(emqx_types:conninfo(), proplists:proplist()) -> channel()).
+init(ConnInfo = #{peername := {PeerHost, _Port},
+                  sockname := {_Host, SockPort}}, Options) ->
+    Zone = proplists:get_value(zone, Options),
+    Peercert = maps:get(peercert, ConnInfo, undefined),
+    Protocol = maps:get(protocol, ConnInfo, mqtt),
+    MountPoint = emqx_zone:mountpoint(Zone),
+    QuotaPolicy = emqx_zone:quota_policy(Zone),
+    ClientInfo = setting_peercert_infos(
+                   Peercert,
+                   #{zone         => Zone,
+                     protocol     => Protocol,
+                     peerhost     => PeerHost,%对等端接口
+                     sockport     => SockPort,%套接字接口
+                     clientid     => undefined,%客户端的进程号
+                     username     => undefined,
+                     mountpoint   => MountPoint,
+                     is_bridge    => false,
+                     is_superuser => false
+                    }, Options),
+    {NClientInfo, NConnInfo} = take_ws_cookie(ClientInfo, ConnInfo),
+    #channel{conninfo   = NConnInfo,
+             clientinfo = NClientInfo,
+             topic_aliases = #{inbound => #{},
+                               outbound => #{}
+                              },
+             auth_cache = #{},
+             quota      = emqx_limiter:init(Zone, QuotaPolicy),
+             timers     = #{},
+             conn_state = idle,
+             takeover   = false,
+             resuming   = false,
+             pendings   = []
+            }.
+~~~
 
+函数签名为 -spec(init(emqx_types:conninfo(), proplists:proplist()) -> channel()).，表示函数接受两个参数：ConnInfo 表示连接信息，Options 表示属性列表。
+
+函数的主要逻辑如下：
+
+从 ConnInfo 中获取对等方主机（PeerHost）和套接字端口（SockPort），并将其存储在变量 PeerHost 和 SockPort 中。<br />
+从 Options 中获取区域（Zone）的值，并将其存储在变量 Zone 中。
+使用 maps:get/3 函数从 ConnInfo 中获取对等证书（Peercert），如果不存在则设置为 undefined。然后，使用 maps:get/3 函数从 ConnInfo 中获取协议（Protocol），如果不存在则设置为 mqtt。<br />
+使用区域（Zone）调用 emqx_zone:mountpoint/1 和 emqx_zone:quota_policy/1 函数，分别获取挂载点（MountPoint）和配额策略（QuotaPolicy）。<br />
+调用 setting_peercert_infos/3 函数，根据对等证书（Peercert）、区域（Zone）、对等方主机（PeerHost）、套接字端口（SockPort）以及其他选项（Options）设置客户端信息（ClientInfo）。<br />
+调用 take_ws_cookie/2 函数，从连接信息（ConnInfo）中取出 WebSocket Cookie，并更新客户端信息（ClientInfo）和连接信息（ConnInfo）。<br />
+创建一个名为 channel 的记录并返回，其中包含了连接信息、客户端信息、主题别名、认证缓存、配额、定时器等字段。<br />
+
+另外，根据.hook文件类，服务器会在Clienttid中会获取当前客户端进程的的tid号，并且会根据priority(优先级)来进行make_hook(call_back)。
 ### 4.实例IOT部署（TODO）
 缺乏实际的硬件部署，考虑虚拟串口部署：https://gitee.com/dgiiot/dgiot/wikis/%E5%BF%AB%E9%80%9F%E6%8E%A5%E5%85%A5/%E8%99%9A%E6%8B%9F%E7%94%B5%E8%A1%A8%E6%8E%A5%E5%85%A5/%E8%99%9A%E6%8B%9F%E4%B8%B2%E5%8F%A3
+
+
+
+
+## Mainflux
+TODO
+
+## SagooIOT
+TODO
